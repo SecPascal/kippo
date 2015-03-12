@@ -10,7 +10,7 @@ import struct
 from zope.interface import implementer
 
 import twisted
-from twisted.cred import portal, credentials
+from twisted.cred import portal
 from twisted.conch import avatar, interfaces as conchinterfaces
 from twisted.conch.ssh import factory, userauth, connection, keys, session, transport, filetransfer, forwarding
 from twisted.conch.ssh.filetransfer import FXF_READ, FXF_WRITE, FXF_APPEND, FXF_CREAT, FXF_TRUNC, FXF_EXCL
