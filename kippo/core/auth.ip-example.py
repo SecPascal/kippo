@@ -134,7 +134,7 @@ class UserDB(object):
                 ipinfo['max'] = randint(mintry, maxtry)
                 print 'First time for %s, need=%d' % (src_ip, ipinfo['max'])
                 ipinfo['tried'] = [userpass]
-                print 'tried: ' % userpass
+                print 'tried: %s' % userpass
             self.savevars()
             return auth
 
