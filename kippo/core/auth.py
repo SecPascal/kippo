@@ -20,7 +20,6 @@ from twisted.conch.ssh import keys
 from config import config
 
 # by Walter de Jong <walter@sara.nl>
-
 class UserDB(object):
 
     def __init__(self):
@@ -131,7 +130,7 @@ class HoneypotPublicKeyChecker:
                 fingerprint=_pubKey.fingerprint())
         return failure.Failure(error.ConchError('Incorrect signature'))
 
-# This credential interfaces also provides an IP address
+# This credential interface also provides an IP address
 @implementer(IUsernamePassword)
 class UsernamePasswordIP:
 
@@ -140,7 +139,7 @@ class UsernamePasswordIP:
         self.password = password
         self.ip = ip
 
-# This credential interfaces also provides an IP address
+# This credential interface also provides an IP address
 @implementer(IPluggableAuthenticationModules)
 class PluggableAuthenticationModulesIP:
 
