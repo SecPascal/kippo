@@ -158,6 +158,7 @@ class HoneyPotInteractiveProtocol(HoneyPotBaseProtocol, recvline.HistoricRecvLin
 
         transport = self.terminal.transport.session.conn.transport
         transport.factory.sessions[transport.transport.sessionno] = self
+        self.ttylog_file = transport.ttylog_file
 
         self.keyHandlers.update({
             '\x01':     self.handle_HOME,	# CTRL-A
