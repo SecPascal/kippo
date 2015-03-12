@@ -8,7 +8,8 @@ from zope.interface import implementer
 import twisted
 
 from twisted.cred.checkers import ICredentialsChecker
-from twisted.cred.credentials import IUsernamePassword, ISSHPrivateKey, IPluggableAuthenticationModules
+from twisted.cred.credentials import IUsernamePassword, ISSHPrivateKey, \
+    IPluggableAuthenticationModules, ICredentials
 from twisted.cred.error import UnauthorizedLogin, UnhandledCredentials
 
 from twisted.internet import defer
@@ -19,6 +20,7 @@ from twisted.conch.ssh import keys
 from config import config
 
 # by Walter de Jong <walter@sara.nl>
+
 class UserDB(object):
 
     def __init__(self):
@@ -26,10 +28,9 @@ class UserDB(object):
         self.load()
 
     def load(self):
-        '''load the user db'''
+        # load the user db
 
-        userdb_file = '%s/userdb.txt' % \
-            (config().get('honeypot', 'data_path'),)
+        userdb_file = '%s/userdb.txt' % (config().get('honeypot', 'data_path'))
 
         f = open(userdb_file, 'r')
         while True:
@@ -41,7 +42,7 @@ class UserDB(object):
             if not line:
                 continue
 
-            if line.startswith( '#' ):
+            if line.startswith('#'):
                 continue
 
             (login, uid_str, passwd) = line.split(':', 2)
@@ -57,10 +58,9 @@ class UserDB(object):
         f.close()
 
     def save(self):
-        '''save the user db'''
+        # save the user db
 
-        userdb_file = '%s/userdb.txt' % \
-            (config().get('honeypot', 'data_path'),)
+        userdb_file = '%s/userdb.txt' % (config().get('honeypot', 'data_path'))
 
         # Note: this is subject to races between kippo instances, but hey ...
         f = open(userdb_file, 'w')
@@ -68,14 +68,16 @@ class UserDB(object):
             f.write('%s:%d:%s\n' % (login, uid, passwd))
         f.close()
 
-    def checklogin(self, thelogin, thepasswd):
-        '''check entered username/password against database'''
-        '''note that it allows multiple passwords for a single username'''
-        '''it also knows wildcard '*' for any password'''
-        '''prepend password with ! to explicitly deny it. Denials must come before wildcards'''
+    def checklogin(self, thelogin, thepasswd, src_ip):
+        # check entered username/password against database
+        # note that it allows multiple passwords for a single username
+        # it also knows wildcard '*' for any password
+        # prepend password with ! to explicitly deny it. Denials must come before wildcards
+        #
+        # Code can be added to do something with src_ip
         for (login, uid, passwd) in self.userdb:
             # explicitly fail on !password
-            if login == thelogin and passwd == '!'+thepasswd:
+            if login == thelogin and passwd == '!' + thepasswd:
                 return False
             if login == thelogin and passwd in (thepasswd, '*'):
                 return True
@@ -100,8 +102,7 @@ class UserDB(object):
         return 1001
 
     def allocUID(self):
-        '''allocate the next UID'''
-
+        # allocate the next UID
         min_uid = 0
         for (login, uid, passwd) in self.userdb:
             if uid > min_uid:
@@ -116,20 +117,41 @@ class UserDB(object):
 
 @implementer(ICredentialsChecker)
 class HoneypotPublicKeyChecker:
+
     """
     Checker that accepts, logs and denies public key authentication attempts
     """
 
-    credentialInterfaces = (ISSHPrivateKey,)
+    credentialInterfaces = (ISSHPrivateKey, )
 
     def requestAvatarId(self, credentials):
         _pubKey = keys.Key.fromString(credentials.blob)
         log.msg(format='public key attempt for user %(username)s with fingerprint %(fingerprint)s',
-            username=credentials.username, fingerprint=_pubKey.fingerprint())
-        return failure.Failure(error.ConchError("Incorrect signature"))
+                username=credentials.username,
+                fingerprint=_pubKey.fingerprint())
+        return failure.Failure(error.ConchError('Incorrect signature'))
+
+# This credential interfaces also provides an IP address
+@implementer(IUsernamePassword)
+class UsernamePasswordIP:
+
+    def __init__(self, username, password, ip):
+        self.username = username
+        self.password = password
+        self.ip = ip
+
+# This credential interfaces also provides an IP address
+@implementer(IPluggableAuthenticationModules)
+class PluggableAuthenticationModulesIP:
+
+    def __init__(self, username, pamConversion, ip):
+        self.username = username
+        self.pamConversion = pamConversion
+        self.ip = ip
 
 @implementer(ICredentialsChecker)
 class HoneypotPasswordChecker:
+
     """
     Checker that accepts "keyboard-interactive" and "password"
     """
@@ -138,37 +160,38 @@ class HoneypotPasswordChecker:
 
     def requestAvatarId(self, credentials):
         if hasattr(credentials, 'password'):
-            if self.checkUserPass(credentials.username, credentials.password):
+            if self.checkUserPass(credentials.username, credentials.password,
+                                  credentials.ip):
                 return defer.succeed(credentials.username)
             else:
                 return defer.fail(UnauthorizedLogin())
         elif hasattr(credentials, 'pamConversion'):
             return self.checkPamUser(credentials.username,
-                credentials.pamConversion)
+                                     credentials.pamConversion, credentials.ip)
         return defer.fail(UnhandledCredentials())
 
-    def checkPamUser(self, username, pamConversion):
-        r = pamConversion((('Password:', 1),))
-        return r.addCallback(self.cbCheckPamUser, username)
+    def checkPamUser(self, username, pamConversion, ip):
+        r = pamConversion((('Password:', 1), ))
+        return r.addCallback(self.cbCheckPamUser, username, ip)
 
-    def cbCheckPamUser(self, responses, username):
-        for response, zero in responses:
-            if self.checkUserPass(username, response):
+    def cbCheckPamUser(self, responses, username, ip):
+        for (response, zero) in responses:
+            if self.checkUserPass(username, response, ip):
                 return defer.succeed(username)
         return defer.fail(UnauthorizedLogin())
 
-    def checkUserPass(self, theusername, thepassword):
-        if UserDB().checklogin(theusername, thepassword):
-            #log.msg( 'login attempt [%s/%s] succeeded' % (theusername, thepassword) )
-            log.msg( eventid='KIPP0002',
-                format='login attempt [%(username)s/%(password)s] succeeded',
-                username=theusername, password=thepassword )
+    def checkUserPass(self, theusername, thepassword, ip):
+        if UserDB().checklogin(theusername, thepassword, ip):
+            # log.msg( 'login attempt [%s/%s] succeeded' % (theusername, thepassword) )
+            log.msg(eventid='KIPP0002',
+                    format='login attempt [%(username)s/%(password)s] succeeded',
+                    username=theusername, password=thepassword)
             return True
         else:
-            #log.msg( 'login attempt [%s/%s] failed' % (theusername, thepassword) )
-            log.msg( eventid='KIPP0003',
-                format='login attempt [%(username)s/%(password)s] failed',
-                username=theusername, password=thepassword )
+            # log.msg( 'login attempt [%s/%s] failed' % (theusername, thepassword) )
+            log.msg(eventid='KIPP0003',
+                    format='login attempt [%(username)s/%(password)s] failed',
+                    username=theusername, password=thepassword)
             return False
 
 # vim: set sw=4 et:
